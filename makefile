@@ -13,10 +13,13 @@
 
 MCU          = atmega32u4
 ARCH         = AVR8
-BOARD        = LEONARDO
+#BOARD        = LEONARDO
 F_CPU        = 16000000
 F_USB        = $(F_CPU)
-AVRDUDE_PROGRAMMER = usbtiny
+#AVRDUDE_PROGRAMMER = usbtiny -C "/mnt/c/Users/Markus/Desktop/Womo/arduino-1.8.16/hardware/tools/avr/etc/avrdude.conf"
+# Arduino Leanardo compatible flashing
+AVRDUDE_PROGRAMMER = avr109 -C "/mnt/c/Users/Markus/Desktop/Womo/arduino-1.8.16/hardware/tools/avr/etc/avrdude.conf"
+AVRDUDE_PORT = COM19
 OPTIMIZATION = s
 TARGET       = I2CUSB
 SRC          = $(TARGET).c Descriptors.c twi.c $(LUFA_SRC_USB) $(LUFA_SRC_USBCLASS) $(LUFA_SRC_TWI) $(LUFA_SRC_SERIAL)

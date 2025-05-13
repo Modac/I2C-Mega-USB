@@ -165,6 +165,36 @@ static void loghex(uint8_t v);
 
 static void usb_i2c_io(void);
 
+/** LUFA CDC Class driver interface configuration and state information. This structure is
+ *  passed to all CDC Class driver functions, so that multiple instances of the same class
+ *  within a device can be differentiated from one another.
+ */
+USB_ClassInfo_CDC_Device_t VirtualSerial_CDC_Interface =
+	{
+		.Config =
+			{
+				.ControlInterfaceNumber         = INTERFACE_ID_CDC_CCI,
+				.DataINEndpoint                 =
+					{
+						.Address                = CDC_TX_EPADDR,
+						.Size                   = CDC_TXRX_EPSIZE,
+						.Banks                  = 1,
+					},
+				.DataOUTEndpoint                =
+					{
+						.Address                = CDC_RX_EPADDR,
+						.Size                   = CDC_TXRX_EPSIZE,
+						.Banks                  = 1,
+					},
+				.NotificationEndpoint           =
+					{
+						.Address                = CDC_NOTIFICATION_EPADDR,
+						.Size                   = CDC_NOTIFICATION_EPSIZE,
+						.Banks                  = 1,
+					},
+			},
+	};
+
 /** Main program entry point. This routine contains the overall program flow, including initial
  *  setup of all components and the main program loop.
  */
@@ -175,7 +205,16 @@ int main(void)
 	GlobalInterruptEnable();
 
 	for (;;) {
-	  USB_USBTask();
+		
+
+		/* Echo all received data on the CDC interface */
+		int16_t ReceivedByte = CDC_Device_ReceiveByte(&VirtualSerial_CDC_Interface);
+		if (!(ReceivedByte < 0))
+			CDC_Device_SendByte(&VirtualSerial_CDC_Interface, (uint8_t)ReceivedByte);
+
+		CDC_Device_USBTask(&VirtualSerial_CDC_Interface);
+
+		USB_USBTask();
 	}
 }
 
@@ -220,9 +259,98 @@ void SetupHardware(void)
 	Serial_SendString("READY.\n\r");
 }
 
+/** Event handler for the library USB Configuration Changed event. */
+void EVENT_USB_Device_ConfigurationChanged(void)
+{
+	bool ConfigSuccess = true;
+
+	ConfigSuccess &= CDC_Device_ConfigureEndpoints(&VirtualSerial_CDC_Interface);
+
+	USB_Device_EnableSOFEvents();
+
+}
+
+static uint8_t wdtcsr_save;
+
+/** CDC class driver callback function the processing of changes to the virtual
+ *  control lines sent from the host..
+ *
+ *  \param[in] CDCInterfaceInfo  Pointer to the CDC class interface configuration structure being referenced
+ */
+void EVENT_CDC_Device_ControLineStateChanged(USB_ClassInfo_CDC_Device_t *const CDCInterfaceInfo)
+{
+    bool CurrentDTRState = (CDCInterfaceInfo->State.ControlLineStates.HostToDevice & CDC_CONTROL_LINE_OUT_DTR);
+	
+	uint32_t baud = CDCInterfaceInfo->State.LineEncoding.BaudRateBPS;
+	
+	// auto-reset into the bootloader is triggered when the port, already
+	// open at 1200 bps, is closed.  this is the signal to start the watchdog
+	// with a relatively long period so it can finish housekeeping tasks
+	// like servicing endpoints before the sketch ends
+
+	uint16_t magic_key_pos = MAGIC_KEY_POS;
+
+	// If we don't use the new RAMEND directly, check manually if we have a newer bootloader.
+	// This is used to keep compatible with the old leonardo bootloaders.
+	// You are still able to set the magic key position manually to RAMEND-1 to save a few bytes for this check.
+	#if MAGIC_KEY_POS != (RAMEND-1)
+	// For future boards save the key in the inproblematic RAMEND
+	// Which is reserved for the main() return value (which will never return)
+	if (isLUFAbootloader()) {
+		// hooray, we got a new bootloader!
+		magic_key_pos = (RAMEND-1);
+	}
+	#endif
+
+	// We check DTR state to determine if host port is open (bit 0 of lineState).
+	if (1200 == baud && !CurrentDTRState)
+	{
+		#if MAGIC_KEY_POS != (RAMEND-1)
+		// Backup ram value if its not a newer bootloader and it hasn't already been saved.
+		// This should avoid memory corruption at least a bit, not fully
+		if (magic_key_pos != (RAMEND-1) && *(uint16_t *)magic_key_pos != MAGIC_KEY) {
+			*(uint16_t *)(RAMEND-1) = *(uint16_t *)magic_key_pos;
+		}
+		#endif
+		// Store boot key
+		*(uint16_t *)magic_key_pos = MAGIC_KEY;
+		// Save the watchdog state in case the reset is aborted.
+		wdtcsr_save = WDTCSR;
+		wdt_enable(WDTO_120MS);
+	}
+	else if (*(uint16_t *)magic_key_pos == MAGIC_KEY)
+	{
+		// Most OSs do some intermediate steps when configuring ports and DTR can
+		// twiggle more than once before stabilizing.
+		// To avoid spurious resets we set the watchdog to 120ms and eventually
+		// cancel if DTR goes back high.
+		// Cancellation is only done if an auto-reset was started, which is
+		// indicated by the magic key having been set.
+
+		wdt_reset();
+		// Restore the watchdog state in case the sketch was using it.
+		WDTCSR |= (1<<WDCE) | (1<<WDE);
+		WDTCSR = wdtcsr_save;
+		#if MAGIC_KEY_POS != (RAMEND-1)
+		// Restore backed up (old bootloader) magic key data
+		if (magic_key_pos != (RAMEND-1)) {
+			*(uint16_t *)magic_key_pos = *(uint16_t *)(RAMEND-1);
+		} else
+		#endif
+		{
+			// Clean up RAMEND key
+			*(uint16_t *)magic_key_pos = 0x0000;
+		}
+	}
+}
+
+
 /** Event handler for the library USB Control Request reception event. */
 void EVENT_USB_Device_ControlRequest(void)
 {
+	
+	CDC_Device_ProcessControlRequest(&VirtualSerial_CDC_Interface);
+
 	// All our messages are vendor type
 	if (!(USB_ControlRequest.bmRequestType & REQTYPE_VENDOR)) {
 		DEBUGC('#');

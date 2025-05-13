@@ -49,10 +49,25 @@
 		#include <LUFA/Drivers/USB/USB.h>
 		#include <LUFA/Platform/Platform.h>
 
+    // stolen from arduino core
+    #define MAGIC_KEY 0x7777
+    #define MAGIC_KEY_POS 0x0800
+    #define NEW_LUFA_SIGNATURE 0xDCFB
+
+    bool isLUFAbootloader(void)
+    {
+      return pgm_read_word(FLASHEND - 1) == NEW_LUFA_SIGNATURE;
+    }
+
 	/* Function Prototypes: */
 		void SetupHardware(void);
 
-		void EVENT_USB_Device_ControlRequest(void);
+    void EVENT_USB_Device_Connect(void);
+		void EVENT_USB_Device_Disconnect(void);
+		void EVENT_USB_Device_ConfigurationChanged(void);
+		// This one is the only one needed for I2C the rest is for CDC
+    void EVENT_USB_Device_ControlRequest(void);
+		void EVENT_USB_Device_StartOfFrame(void);
 
 #endif
 
