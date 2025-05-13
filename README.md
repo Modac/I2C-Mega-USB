@@ -40,7 +40,7 @@ Here's a "BS Micro ATMEGA32U4" board with pull-up resistors and a connected Wii 
 - Install avr-gcc compiler toolchain and avrdude. If you have used Arduino IDE, you may have it already (add arduino-x.x.x/hardware/tools/avr/bin/ to PATH).
 - Clone this repo:
 ```
-git clone https://github.com/kasbert/I2C-Mega-USB
+git clone https://github.com/Modac/I2C-Mega-USB
 ```
 - Fetch the libraries:
 ```
@@ -89,6 +89,8 @@ I2C device, ```0x77``` is the I2C device's 7-bit address, and ```i2c-9``` is the
 number the kernel assigned to the i2c-star adapter (appears as ```i2c-tiny-usb```
 in ```dmesg``` and ```i2cdetect```).
 
+## For Windows users
+With Zadig install libusbk (or libusb-win32) driver for I2C-Mega-USB device. Then the device can be usb through the libusb API. E.g. with pyUSB.
 
 ## Credits
 * i2c-tiny-usb. [https://github.com/harbaum/I2C-Tiny-USB]
